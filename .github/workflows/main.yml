@@ -19,6 +19,11 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Set up Gradle 8.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
+
       - name: Set up Android SDK & NDK
         uses: android-actions/setup-android@v3
 
@@ -39,7 +44,7 @@ jobs:
           </resources>
           EOF
 
-          # Create styles.xml defining Theme.AppCompat.NoActionBar
+          # Create styles.xml
           cat << 'EOF' > "$PROJECT_DIR/app/src/main/res/values/styles.xml"
           <resources>
               <style name="Theme.AppCompat.NoActionBar" parent="Theme.MaterialComponents.DayNight.NoActionBar">
@@ -50,19 +55,17 @@ jobs:
           </resources>
           EOF
 
-          # Ensure gradle.properties exists in project folder
+          # Ensure gradle.properties exists with AndroidX enabled
           cat << 'EOF' > "$PROJECT_DIR/gradle.properties"
           android.useAndroidX=true
           android.enableJetifier=true
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
-          chmod +x "$PROJECT_DIR/gradlew"
-
       - name: Build Debug APK
         run: |
           cd Rover_Hardware_Verification_Android_NDK
-          ./gradlew assembleDebug --stacktrace
+          gradle assembleDebug --stacktrace
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
