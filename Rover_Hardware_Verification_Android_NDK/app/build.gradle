@@ -33,34 +33,20 @@ android {
             debuggable true
         }
     }
+    
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    
     kotlinOptions {
         jvmTarget = '17'
     }
+    
     externalNativeBuild {
         cmake {
             path file('src/main/cpp/CMakeLists.txt')
             version '3.22.1'
-        }
-    }
-    
-    configurations.all {
-        resolutionStrategy {
-            eachDependency { DependencyResolveDetails details ->
-                // Force consistent versions
-                if (details.requested.group == 'androidx.appcompat') {
-                    details.useVersion '1.6.1'
-                }
-                if (details.requested.group == 'androidx.core') {
-                    details.useVersion '1.12.0'
-                }
-                if (details.requested.group == 'com.google.android.material') {
-                    details.useVersion '1.11.0'
-                }
-            }
         }
     }
 }
