@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#0f172a"
+    android:padding="8dp">
+
+    <!-- Top Viewport: Real-time Camera / Cleaned Surface -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#000000">
+
+        <SurfaceView
+            android:id="@+id/surfaceView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <TextView
+            android:id="@+id/telemetryText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|start"
+            android:layout_margin="8dp"
+            android:background="#99000000"
+            android:padding="6dp"
+            android:textColor="#38bdf8"
+            android:textSize="12sp"
+            android:text="Real-Time Motion Filter: ACTIVE" />
+    </FrameLayout>
+
+    <!-- Real-Time Cleanup Display Mode Buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="6dp">
+
+        <Button
+            android:id="@+id/btnModeSplit"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Split View"
+            android:textSize="11sp" />
+
+        <Button
+            android:id="@+id/btnModeCleaned"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Cleaned Lanes"
+            android:textSize="11sp" />
+
+        <Button
+            android:id="@+id/btnModeRaw"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Raw Input"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- Controls & Source Selection -->
+    <RadioGroup
+        android:id="@+id/modeRadioGroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:checkedButton="@id/radioSynthetic">
+        <RadioButton
+            android:id="@+id/radioSynthetic"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="#ffffff"
+            android:text="Synthetic Track" />
+        <RadioButton
+            android:id="@+id/radioCamera"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="#ffffff"
+            android:text="Camera2 Sensor" />
+    </RadioGroup>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/triggerMeteoriteBtn"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Inject Transient" />
+
+        <Button
+            android:id="@+id/recordBtn"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Start Pass" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#94a3b8"
+        android:textSize="11sp"
+        android:text="Status: Initializing..." />
+</LinearLayout>
