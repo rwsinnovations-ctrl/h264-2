@@ -3,83 +3,66 @@ package com.rover.hwverify
 import android.annotation.SuppressLint
 import android.content.Context
 import android.hardware.camera2.*
-import android.util.Log
-import android.util.Size
+import android.hardware.camera2.params.ColorSpaceTransform
+import android.hardware.camera2.params.RggbChannelVector
+import android.os.Handler
+import android.os.Looper
+import android.util.Rational
 import android.view.Surface
 
-class Camera2DefocusEngine(private val context: Context) {
-    companion object {
-        private const val TAG = "Camera2DefocusEngine"
-        val TARGET_RESOLUTION = Size(320, 240)
-        const val TARGET_FPS = 30
-    }
-
+class Camera2DefocusEngine(context: Context) {
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private var cameraDevice: CameraDevice? = null
     private var captureSession: CameraCaptureSession? = null
-    var minHardwareFocusDistance: Float = 10.0f
-        private set
+    private var captureRequestBuilder: CaptureRequest.Builder? = null
 
     @SuppressLint("MissingPermission")
-    fun startCamera(surface: Surface, onReady: () -> Unit) {
-        val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
-            val chars = cameraManager.getCameraCharacteristics(id)
-            val facing = chars.get(CameraCharacteristics.LENS_FACING)
-            facing == CameraCharacteristics.LENS_FACING_BACK
-        } ?: cameraManager.cameraIdList[0]
-
-        val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-        minHardwareFocusDistance = characteristics.get(
-            CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE
-        ) ?: 10.0f
-
-        Log.i(TAG, "Hardware Minimum Focus Distance: $minHardwareFocusDistance diopters (Macro limit)")
-
+    fun startCamera(targetSurface: Surface, onReady: () -> Unit) {
+        val cameraId = cameraManager.cameraIdList[0]
         cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
             override fun onOpened(camera: CameraDevice) {
                 cameraDevice = camera
-                createDefocusedCaptureSession(surface, onReady)
+                val builder = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+                builder.addTarget(targetSurface)
+
+                // 1. Edge Enhancement for sharp gradients
+                builder.set(CaptureRequest.EDGE_MODE, CameraMetadata.EDGE_MODE_HIGH_QUALITY)
+
+                // 2. Hardware Color Correction Matrix (Red Track Isolation)
+                builder.set(CaptureRequest.COLOR_CORRECTION_MODE, CameraMetadata.COLOR_CORRECTION_MODE_TRANSFORM_MATRIX)
+                builder.set(CaptureRequest.COLOR_CORRECTION_TRANSFORM, ColorSpaceTransform(arrayOf(
+                    Rational(3, 1), Rational(0, 1), Rational(0, 1),
+                    Rational(0, 1), Rational(1, 4), Rational(0, 1),
+                    Rational(0, 1), Rational(0, 1), Rational(1, 4)
+                )))
+                builder.set(CaptureRequest.COLOR_CORRECTION_GAINS, RggbChannelVector(2.5f, 0.8f, 0.8f, 2.5f))
+
+                // 3. Freeze Tonemap
+                builder.set(CaptureRequest.TONEMAP_MODE, CameraMetadata.TONEMAP_MODE_HIGH_QUALITY)
+
+                captureRequestBuilder = builder
+
+                camera.createCaptureSession(listOf(targetSurface), object : CameraCaptureSession.StateCallback() {
+                    override fun onConfigured(session: CameraCaptureSession) {
+                        captureSession = session
+                        session.setRepeatingRequest(builder.build(), null, null)
+                        onReady()
+                    }
+                    override fun onConfigureFailed(session: CameraCaptureSession) {}
+                }, Handler(Looper.getMainLooper()))
             }
 
-            override fun onDisconnected(camera: CameraDevice) {
-                camera.close()
-                cameraDevice = null
-            }
-
-            override fun onError(camera: CameraDevice, error: Int) {
-                Log.e(TAG, "Camera error code: $error")
-            }
-        }, null)
+            override fun onDisconnected(camera: CameraDevice) { camera.close() }
+            override fun onError(camera: CameraDevice, error: Int) {}
+        }, Handler(Looper.getMainLooper()))
     }
 
-    private fun createDefocusedCaptureSession(previewSurface: Surface, onReady: () -> Unit) {
-        val camera = cameraDevice ?: return
-        val builder = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
-        builder.addTarget(previewSurface)
-
-        // 1. DISABLE AUTOMATED CONTINUOUS FOCUS
+    fun setMidpointFocus(diopters: Float) {
+        val session = captureSession ?: return
+        val builder = captureRequestBuilder ?: return
         builder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
-
-        // 2. SET FOCUS DISTANCE TO MAXIMUM DIOPTERS (MINIMUM DISTANCE / MACRO BLUR)
-        // A camera 50cm above the ground will render asphalt as a flat uniform gray field (Vx=0, Vy=0)
-        // while road markings become smooth continuous gradient edges with clean horizontal displacement.
-        builder.set(CaptureRequest.LENS_FOCUS_DISTANCE, minHardwareFocusDistance)
-
-        // Lock frame rate to 30 FPS
-        builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, android.util.Range(TARGET_FPS, TARGET_FPS))
-
-        camera.createCaptureSession(listOf(previewSurface), object : CameraCaptureSession.StateCallback() {
-            override fun onConfigured(session: CameraCaptureSession) {
-                captureSession = session
-                session.setRepeatingRequest(builder.build(), null, null)
-                Log.i(TAG, "Defocus capture session configured successfully at 320x240 @ 30 FPS.")
-                onReady()
-            }
-
-            override fun onConfigureFailed(session: CameraCaptureSession) {
-                Log.e(TAG, "Failed to configure Camera2 capture session.")
-            }
-        }, null)
+        builder.set(CaptureRequest.LENS_FOCUS_DISTANCE, diopters)
+        session.setRepeatingRequest(builder.build(), null, null)
     }
 
     fun stop() {
