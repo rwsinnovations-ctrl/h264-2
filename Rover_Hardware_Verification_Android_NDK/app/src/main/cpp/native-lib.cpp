@@ -85,22 +85,21 @@ Java_com_rover_hwverify_VerificationSessionAdapter_nativeProcessDirectScanlines(
     jint farScanlineY, jint nearScanlineY, jfloat transientVyThreshold,
     jint blobWidthMin, jint blobWidthMax, jint minGauge, jint maxGauge)
 {
-    // ZERO-COPY HARDWARE POINTER: Points directly to camera DMA memory
+    // ZERO-COPY: Direct pointer to physical camera DMA buffer
     uint8_t* yPlane = static_cast<uint8_t*>(env->GetDirectBufferAddress(directLumaBuffer));
     if (!yPlane) {
-        return env->NewStringUTF("{\"frameValid\":false,\"reason\":\"NULL_DIRECT_BUFFER\"}");
+        return env->NewStringUTF("{\"frameValid\":false,\"reason\":\"NULL_BUFFER\"}");
     }
 
-    // STAGE 1: I-Frame check (only check before scanline extraction)
+    // STAGE 1: I-Frame Check (only filter before scanline extraction)
     if (isIFrame) {
-        // I-frame: intra only, bypass motion vector cleanup
+        // Intra-frame only, bypass motion vector processing
     }
 
     int fY = std::max(0, std::min(farScanlineY, height - 1));
     int nY = std::max(0, std::min(nearScanlineY, height - 1));
 
-    // STAGE 2: Direct Scanline Slices using physical rowStride
-    // CPU reads ONLY 640 bytes total (320 bytes * 2 rows) directly from memory!
+    // STAGE 2: Direct Scanline Slices (CPU reads only 2 rows directly from memory)
     const uint8_t* farRow = yPlane + (fY * rowStride);
     const uint8_t* nearRow = yPlane + (nY * rowStride);
 
@@ -108,17 +107,22 @@ Java_com_rover_hwverify_VerificationSessionAdapter_nativeProcessDirectScanlines(
     uint8_t thresholdFar = compute1DOtsu(farRow, width);
     uint8_t thresholdNear = compute1DOtsu(nearRow, width);
 
-    // STAGE 4: 1D Blob Extraction & Definitive Drop Gate
+    // STAGE 4: 1D Blob Extraction & Invariant Audit
     std::vector<Blob> farBlobs = extractBlobs(farRow, width, thresholdFar, blobWidthMin, blobWidthMax);
     std::vector<Blob> nearBlobs = extractBlobs(nearRow, width, thresholdNear, blobWidthMin, blobWidthMax);
 
     char jsonBuffer[512];
 
-    // Invariant Audit: Must have exactly 2 lane blobs per scanline
+    // Audit 1: Exactly 2 blobs per line
     if (farBlobs.size() != 2 || nearBlobs.size() != 2) {
         snprintf(jsonBuffer, sizeof(jsonBuffer),
-            "{\"frameValid\":false,\"reason\":\"BLOB_COUNT_FAIL\",\"farBlobs\":%d,\"nearBlobs\":%d}",
-            (int)farBlobs.size(), (int)nearBlobs.size());
+            "{\"frameValid\":false,\"reason\":\"BLOB_COUNT_FAIL\","
+            "\"otsuFar\":%d,\"otsuNear\":%d,"
+            "\"farBlobsCount\":%d,\"nearBlobsCount\":%d,"
+            "\"farY\":%d,\"nearY\":%d}",
+            thresholdFar, thresholdNear,
+            (int)farBlobs.size(), (int)nearBlobs.size(),
+            fY, nY);
         return env->NewStringUTF(jsonBuffer);
     }
 
@@ -130,26 +134,32 @@ Java_com_rover_hwverify_VerificationSessionAdapter_nativeProcessDirectScanlines(
     float farGauge = frX - flX;
     float nearGauge = nrX - nlX;
 
-    // Invariant Audit: Geometry & Convergence
+    // Audit 2: Track Gauge & Convergence Invariants
     if (farGauge < minGauge || farGauge > maxGauge ||
         nearGauge < minGauge || nearGauge > maxGauge ||
         nearGauge <= farGauge) {
         snprintf(jsonBuffer, sizeof(jsonBuffer),
-            "{\"frameValid\":false,\"reason\":\"GEOMETRY_FAIL\",\"farGauge\":%.1f,\"nearGauge\":%.1f}",
-            farGauge, nearGauge);
+            "{\"frameValid\":false,\"reason\":\"GEOMETRY_FAIL\","
+            "\"otsuFar\":%d,\"otsuNear\":%d,"
+            "\"farGauge\":%.1f,\"nearGauge\":%.1f,"
+            "\"farY\":%d,\"nearY\":%d}",
+            thresholdFar, thresholdNear,
+            farGauge, nearGauge, fY, nY);
         return env->NewStringUTF(jsonBuffer);
     }
 
-    // ALL CHECKS PASSED: Emit verified 4 centroids
+    // ALL CHECKS PASSED: Return verified 4 corners
     snprintf(jsonBuffer, sizeof(jsonBuffer),
         "{\"frameValid\":true,"
         "\"otsuFar\":%d,\"otsuNear\":%d,"
         "\"farLeft\":{\"x\":%.1f,\"y\":%d},"
         "\"farRight\":{\"x\":%.1f,\"y\":%d},"
         "\"nearLeft\":{\"x\":%.1f,\"y\":%d},"
-        "\"nearRight\":{\"x\":%.1f,\"y\":%d}}",
+        "\"nearRight\":{\"x\":%.1f,\"y\":%d},"
+        "\"farGauge\":%.1f,\"nearGauge\":%.1f}",
         thresholdFar, thresholdNear,
-        flX, fY, frX, fY, nlX, nY, nrX, nY);
+        flX, fY, frX, fY, nlX, nY, nrX, nY,
+        farGauge, nearGauge);
 
     return env->NewStringUTF(jsonBuffer);
 }
