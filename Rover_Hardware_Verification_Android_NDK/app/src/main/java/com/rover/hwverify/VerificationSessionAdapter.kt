@@ -1,12 +1,11 @@
 package com.rover.hwverify
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
-import java.io.File
+import java.nio.ByteBuffer
 
 class VerificationSessionAdapter(
     private val context: Context,
@@ -18,8 +17,7 @@ class VerificationSessionAdapter(
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val defocusEngine = Camera2DefocusEngine(context)
-    private var encoderPipeline: H264EncoderPipeline? = null
+    private val cameraEngine = Camera2DefocusEngine(context)
 
     // Configurables (writable by JavaScript)
     var farScanlineY: Int = 60
@@ -30,10 +28,50 @@ class VerificationSessionAdapter(
     var minGauge: Int = 80
     var maxGauge: Int = 260
 
-    private val lumaBuffer = ByteArray(WIDTH * HEIGHT)
+    private var frameCounter = 0
 
     init {
         System.loadLibrary("rover_vector_native")
+
+        // Hook up zero-copy hardware listener
+        cameraEngine.onDirectFrameAvailable = { directBuffer, rowStride, timestampNs ->
+            onHardwareFrame(directBuffer, rowStride, timestampNs)
+        }
+
+        // Start hardware camera sensor immediately
+        cameraEngine.startCamera {
+            mainHandler.post {
+                webView.evaluateJavascript(
+                    "if (document.getElementById('status-badge')) { document.getElementById('status-badge').innerText = 'CAMERA HARDWARE ACTIVE'; }",
+                    null
+                )
+            }
+        }
+    }
+
+    /**
+     * Executes natively per hardware frame.
+     * directBuffer is a physical DMA memory pointer. 0 CPU copies.
+     */
+    private fun onHardwareFrame(directBuffer: ByteBuffer, rowStride: Int, timestampNs: Long) {
+        frameCounter++
+        val isIFrame = (frameCounter % 30 == 0) // Stage 1 check
+
+        // Pass direct memory address straight to C++ NDK
+        val jsonResult = nativeProcessDirectScanlines(
+            directBuffer, WIDTH, HEIGHT, rowStride,
+            null, 0, isIFrame,
+            farScanlineY, nearScanlineY, transientVyThreshold,
+            blobWidthMin, blobWidthMax, minGauge, maxGauge
+        )
+
+        // Post JSON result to Web UI
+        mainHandler.post {
+            webView.evaluateJavascript(
+                "if (window.onPipelineResult) { window.onPipelineResult($jsonResult); }",
+                null
+            )
+        }
     }
 
     @JavascriptInterface
@@ -56,38 +94,18 @@ class VerificationSessionAdapter(
         maxGauge = gMax
 
         mainHandler.post {
-            defocusEngine.setMidpointFocus(focusMidpointDiopters)
+            cameraEngine.setMidpointFocus(focusMidpointDiopters)
         }
         return true
     }
 
-    fun onFrameCaptured(bitmap: Bitmap, packetBytes: ByteArray?, isIFrame: Boolean) {
-        val pixels = IntArray(WIDTH * HEIGHT)
-        bitmap.getPixels(pixels, 0, WIDTH, 0, 0, WIDTH, HEIGHT)
-
-        // Convert RGB to Y/Luma plane
-        for (i in 0 until (WIDTH * HEIGHT)) {
-            val p = pixels[i]
-            val r = (p shr 16) and 0xFF
-            val g = (p shr 8) and 0xFF
-            val b = p and 0xFF
-            lumaBuffer[i] = ((r * 77 + g * 150 + b * 29) shr 8).toByte()
-        }
-
-        val jsonResult = nativeProcessPipeline(
-            lumaBuffer, WIDTH, HEIGHT,
-            packetBytes, packetBytes?.size ?: 0, isIFrame,
-            farScanlineY, nearScanlineY, transientVyThreshold,
-            blobWidthMin, blobWidthMax, minGauge, maxGauge
-        )
-
-        mainHandler.post {
-            webView.evaluateJavascript("if (window.onPipelineResult) { window.onPipelineResult($jsonResult); }", null)
-        }
+    fun stop() {
+        cameraEngine.stop()
     }
 
-    private external fun nativeProcessPipeline(
-        luma: ByteArray, width: Int, height: Int,
+    // Direct memory JNI signature
+    private external fun nativeProcessDirectScanlines(
+        directLumaBuffer: ByteBuffer, width: Int, height: Int, rowStride: Int,
         packet: ByteArray?, packetSize: Int, isIFrame: Boolean,
         farY: Int, nearY: Int, vyThreshold: Float,
         wMin: Int, wMax: Int, minG: Int, maxG: Int
