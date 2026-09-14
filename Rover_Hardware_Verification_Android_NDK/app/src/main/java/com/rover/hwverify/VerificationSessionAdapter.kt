@@ -3,6 +3,7 @@ package com.rover.hwverify
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import java.nio.ByteBuffer
@@ -12,6 +13,7 @@ class VerificationSessionAdapter(
     private val webView: WebView
 ) {
     companion object {
+        private const val TAG = "RoverAdapter"
         const val WIDTH = 320
         const val HEIGHT = 240
     }
@@ -19,7 +21,6 @@ class VerificationSessionAdapter(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val cameraEngine = Camera2DefocusEngine(context)
 
-    // Configurables (writable by JavaScript)
     var farScanlineY: Int = 60
     var nearScanlineY: Int = 210
     var transientVyThreshold: Float = 3.0f
@@ -29,35 +30,41 @@ class VerificationSessionAdapter(
     var maxGauge: Int = 260
 
     private var frameCounter = 0
+    private var isStarted = false
 
     init {
-        System.loadLibrary("rover_vector_native")
+        try {
+            System.loadLibrary("rover_vector_native")
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "Failed to load native library: ${e.message}")
+        }
+    }
 
-        // Hook up zero-copy hardware listener
+    /**
+     * Called ONLY after Camera permission is verified.
+     */
+    fun startHardware() {
+        if (isStarted) return
+        isStarted = true
+
         cameraEngine.onDirectFrameAvailable = { directBuffer, rowStride, timestampNs ->
             onHardwareFrame(directBuffer, rowStride, timestampNs)
         }
 
-        // Start hardware camera sensor immediately
         cameraEngine.startCamera {
             mainHandler.post {
                 webView.evaluateJavascript(
-                    "if (document.getElementById('status-badge')) { document.getElementById('status-badge').innerText = 'CAMERA HARDWARE ACTIVE'; }",
+                    "if (document.getElementById('status-badge')) { document.getElementById('status-badge').className = 'status-badge live'; document.getElementById('status-badge').innerText = 'CAMERA HARDWARE ACTIVE'; }",
                     null
                 )
             }
         }
     }
 
-    /**
-     * Executes natively per hardware frame.
-     * directBuffer is a physical DMA memory pointer. 0 CPU copies.
-     */
     private fun onHardwareFrame(directBuffer: ByteBuffer, rowStride: Int, timestampNs: Long) {
         frameCounter++
-        val isIFrame = (frameCounter % 30 == 0) // Stage 1 check
+        val isIFrame = (frameCounter % 30 == 0)
 
-        // Pass direct memory address straight to C++ NDK
         val jsonResult = nativeProcessDirectScanlines(
             directBuffer, WIDTH, HEIGHT, rowStride,
             null, 0, isIFrame,
@@ -65,7 +72,6 @@ class VerificationSessionAdapter(
             blobWidthMin, blobWidthMax, minGauge, maxGauge
         )
 
-        // Post JSON result to Web UI
         mainHandler.post {
             webView.evaluateJavascript(
                 "if (window.onPipelineResult) { window.onPipelineResult($jsonResult); }",
@@ -100,10 +106,10 @@ class VerificationSessionAdapter(
     }
 
     fun stop() {
+        isStarted = false
         cameraEngine.stop()
     }
 
-    // Direct memory JNI signature
     private external fun nativeProcessDirectScanlines(
         directLumaBuffer: ByteBuffer, width: Int, height: Int, rowStride: Int,
         packet: ByteArray?, packetSize: Int, isIFrame: Boolean,
