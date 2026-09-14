@@ -5,11 +5,12 @@
     android:orientation="vertical"
     android:background="#020617">
 
-    <!-- Top Half: Direct Hardware Camera Preview (Real Optical Feed) -->
+    <!-- Top Half: Live Optical Camera Viewfinder -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:background="#000000">
 
         <SurfaceView
             android:id="@+id/cameraSurfaceView"
@@ -17,11 +18,12 @@
             android:layout_height="match_parent" />
     </FrameLayout>
 
-    <!-- Bottom Half: Web HUD (Otsu, Blobs, Corners, Audit Diagnostics) -->
+    <!-- Bottom Half: Web Diagnostics HUD -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:background="#090d16">
 
         <WebView
             android:id="@+id/webView"
