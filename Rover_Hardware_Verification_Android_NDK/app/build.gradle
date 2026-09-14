@@ -4,6 +4,11 @@ plugins {
 }
 
 android {
+     sourceSets {
+        main {
+            assets.srcDirs = ['src/main/assets']
+        }}
+    
     namespace 'com.rover.hwverify'
     compileSdk 34
 
