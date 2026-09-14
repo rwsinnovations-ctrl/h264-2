@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Rover Hardware Verification</title>
+  <title>Rover HUD</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: #090d16;
+      background: #020617;
       color: #e2e8f0;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      padding: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      padding: 8px;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 6px;
       height: 100vh;
       overflow: hidden;
     }
@@ -22,174 +22,165 @@
       justify-content: space-between;
       align-items: center;
       border-bottom: 1px solid #1e293b;
-      padding-bottom: 6px;
+      padding-bottom: 4px;
     }
-    h1 { font-size: 14px; font-weight: 700; color: #38bdf8; letter-spacing: 0.5px; }
-    .status-badge {
-      font-size: 11px;
-      padding: 2px 8px;
-      border-radius: 4px;
+    h1 { font-size: 12px; color: #38bdf8; }
+    #badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
       background: #1e293b;
       color: #94a3b8;
     }
-    .status-badge.live { background: #064e3b; color: #34d399; }
-    .status-badge.dropped { background: #7f1d1d; color: #f87171; }
-
     #stage-canvas {
       width: 100%;
-      height: 52%;
-      background: #020617;
-      border: 1px solid #1e293b;
-      border-radius: 6px;
+      height: 48%;
+      background: #090d16;
+      border: 1px solid #334155;
+      border-radius: 4px;
       display: block;
     }
-
-    .telemetry-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 6px;
-      font-size: 11px;
-    }
-    .card {
+    .diag-box {
       background: #0f172a;
       border: 1px solid #1e293b;
       border-radius: 4px;
       padding: 6px 8px;
+      font-size: 10px;
     }
-    .card-label { color: #64748b; font-size: 10px; text-transform: uppercase; margin-bottom: 2px; }
-    .card-val { color: #f8fafc; font-weight: 600; }
-
-    .controls {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 6px;
-      margin-top: auto;
-    }
+    .diag-row { display: flex; justify-content: space-between; margin-bottom: 2px; }
+    .diag-label { color: #64748b; }
+    .diag-val { color: #f8fafc; font-weight: bold; }
+    .status-error { color: #f87171 !important; }
+    .status-pass { color: #4ade80 !important; }
+    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: auto; }
     button {
       background: #1e293b;
       color: #f8fafc;
       border: 1px solid #334155;
-      padding: 8px 10px;
-      border-radius: 4px;
-      font-size: 11px;
+      padding: 6px;
+      border-radius: 3px;
+      font-size: 10px;
       font-family: inherit;
-      cursor: pointer;
     }
-    button:active { background: #38bdf8; color: #020617; }
-    button.primary { background: #0284c7; border-color: #38bdf8; }
+    button.primary { background: #0284c7; }
   </style>
 </head>
 <body>
 
   <header>
-    <h1>ROVER HW PIPELINE</h1>
-    <div id="status-badge" class="status-badge">WAITING FOR SILICON</div>
+    <h1>ROVER HUD</h1>
+    <div id="badge">WAITING FOR CAMERA</div>
   </header>
 
-  <!-- Visualizer Canvas for 4 Corners & Scanlines -->
-  <canvas id="stage-canvas" width="320" height="240"></canvas>
+  <!-- Portrait 240x320 Canvas -->
+  <canvas id="stage-canvas" width="240" height="320"></canvas>
 
-  <div class="telemetry-grid">
-    <div class="card">
-      <div class="card-label">Near Lane Corners (x_nl, x_nr)</div>
-      <div id="near-corners" class="card-val">-- , --</div>
+  <div class="diag-box">
+    <div class="diag-row">
+      <span class="diag-label">AUDIT:</span>
+      <span id="audit-status" class="diag-val">NO DATA</span>
     </div>
-    <div class="card">
-      <div class="card-label">Far Lane Corners (x_fl, x_fr)</div>
-      <div id="far-corners" class="card-val">-- , --</div>
+    <div class="diag-row">
+      <span class="diag-label">BLOBS:</span>
+      <span id="blob-status" class="diag-val">Far: -- | Near: --</span>
     </div>
-    <div class="card">
-      <div class="card-label">1D Otsu Thresholds (Near / Far)</div>
-      <div id="otsu-vals" class="card-val">-- / --</div>
+    <div class="diag-row">
+      <span class="diag-label">1D OTSU:</span>
+      <span id="otsu-status" class="diag-val">Far: -- | Near: --</span>
     </div>
-    <div class="card">
-      <div class="card-label">Frame Audit Status</div>
-      <div id="drop-reason" class="card-val">READY</div>
+    <div class="diag-row">
+      <span class="diag-label">GAUGE:</span>
+      <span id="gauge-status" class="diag-val">Far: -- | Near: --</span>
     </div>
   </div>
 
   <div class="controls">
-    <button class="primary" onclick="configureDefaults()">Apply Pipeline Config</button>
-    <button onclick="requestTestTick()">Re-Query Pipeline</button>
+    <button class="primary" onclick="setScreenPreset()">Screen Target Preset</button>
+    <button onclick="setTrackPreset()">Outdoor Track Preset</button>
   </div>
 
   <script>
     const canvas = document.getElementById('stage-canvas');
     const ctx = canvas.getContext('2d');
+    let frameCount = 0;
 
-    let currentNearY = 210;
-    let currentFarY = 60;
+    function drawIdle() {
+      ctx.fillStyle = '#090d16';
+      ctx.fillRect(0, 0, 240, 320);
 
-    function renderEmpty() {
-      ctx.fillStyle = '#020617';
-      ctx.fillRect(0, 0, 320, 240);
-
-      // Draw scanline guides
       ctx.strokeStyle = '#334155';
       ctx.setLineDash([4, 4]);
       ctx.beginPath();
-      ctx.moveTo(0, currentFarY); ctx.lineTo(320, currentFarY);
-      ctx.moveTo(0, currentNearY); ctx.lineTo(320, currentNearY);
+      ctx.moveTo(0, 90); ctx.lineTo(240, 90);
+      ctx.moveTo(0, 280); ctx.lineTo(240, 280);
       ctx.stroke();
       ctx.setLineDash([]);
 
       ctx.fillStyle = '#64748b';
-      ctx.font = '10px monospace';
-      ctx.fillText(`FAR SCANLINE: y=${currentFarY}`, 6, currentFarY - 4);
-      ctx.fillText(`NEAR SCANLINE: y=${currentNearY}`, 6, currentNearY - 4);
+      ctx.font = '9px monospace';
+      ctx.fillText('FAR SCANLINE (Y=90)', 6, 85);
+      ctx.fillText('NEAR SCANLINE (Y=280)', 6, 275);
     }
-    renderEmpty();
+    drawIdle();
 
-    // Configure hardware pipeline through the native AndroidJsBridgeAdapter
-    function configureDefaults() {
-      if (window.RoverBridge && window.RoverBridge.configurePipeline) {
-        // farY, nearY, midpointFocusDiopters, vyThreshold, wMin, wMax, minGauge, maxGauge
-        window.RoverBridge.configurePipeline(60, 210, 1.5, 3.0, 4, 24, 80, 260);
-        document.getElementById('drop-reason').innerText = 'CONFIG SENT TO NDK';
-      } else {
-        document.getElementById('drop-reason').innerText = 'ROVER_BRIDGE NOT FOUND';
+    function setScreenPreset() {
+      if (window.RoverBridge) {
+        // farY=90, nearY=280, focus=2.5D, vyThresh=3.0, wMin=2, wMax=35, gMin=30, gMax=220
+        window.RoverBridge.configurePipeline(90, 280, 2.5, 3.0, 2, 35, 30, 220);
+        document.getElementById('audit-status').innerText = 'SCREEN PRESET SENT';
       }
     }
 
-    function requestTestTick() {
-      configureDefaults();
+    function setTrackPreset() {
+      if (window.RoverBridge) {
+        window.RoverBridge.configurePipeline(90, 280, 1.2, 3.0, 4, 30, 50, 210);
+        document.getElementById('audit-status').innerText = 'OUTDOOR PRESET SENT';
+      }
     }
 
-    // Callback invoked automatically from VerificationSessionAdapter.kt
     window.onPipelineResult = function(result) {
-      const badge = document.getElementById('status-badge');
-      const dropReason = document.getElementById('drop-reason');
+      frameCount++;
+      const badge = document.getElementById('badge');
+      const auditStatus = document.getElementById('audit-status');
+      const blobStatus = document.getElementById('blob-status');
+      const otsuStatus = document.getElementById('otsu-status');
+      const gaugeStatus = document.getElementById('gauge-status');
+
+      badge.style.background = '#064e3b';
+      badge.style.color = '#34d399';
+      badge.innerText = `FRAME #${frameCount}`;
+
+      otsuStatus.innerText = `Far: ${result.otsuFar} | Near: ${result.otsuNear}`;
 
       if (!result.frameValid) {
-        badge.className = 'status-badge dropped';
-        badge.innerText = 'FRAME DROPPED';
-        dropReason.innerText = result.reason || 'BLOB/GAUGE FAIL';
+        auditStatus.className = 'diag-val status-error';
+        auditStatus.innerText = `DROPPED: ${result.reason}`;
+
+        if (result.reason === 'BLOB_COUNT_FAIL') {
+          blobStatus.innerText = `Far: ${result.farBlobsCount} (need 2) | Near: ${result.nearBlobsCount} (need 2)`;
+        } else if (result.reason === 'GEOMETRY_FAIL') {
+          gaugeStatus.innerText = `Far: ${result.farGauge.toFixed(1)}px | Near: ${result.nearGauge.toFixed(1)}px`;
+        }
+        drawIdle();
         return;
       }
 
-      badge.className = 'status-badge live';
-      badge.innerText = 'SILICON PIPELINE LIVE';
-      dropReason.innerText = 'PASS (VERIFIED)';
+      auditStatus.className = 'diag-val status-pass';
+      auditStatus.innerText = 'PASS: 4 CORNERS LOCKED';
+      blobStatus.innerText = 'Far: 2 (OK) | Near: 2 (OK)';
+      gaugeStatus.innerText = `Far: ${result.farGauge.toFixed(1)}px | Near: ${result.nearGauge.toFixed(1)}px`;
 
-      document.getElementById('near-corners').innerText =
-        `${result.nearLeft.x.toFixed(1)}, ${result.nearRight.x.toFixed(1)}`;
-      document.getElementById('far-corners').innerText =
-        `${result.farLeft.x.toFixed(1)}, ${result.farRight.x.toFixed(1)}`;
-      document.getElementById('otsu-vals').innerText =
-        `${result.otsuNear} / ${result.otsuFar}`;
-
-      // Draw the verified lane trapezoid & centroids
-      ctx.fillStyle = '#020617';
-      ctx.fillRect(0, 0, 320, 240);
+      ctx.fillStyle = '#090d16';
+      ctx.fillRect(0, 0, 240, 320);
 
       // Scanline guides
       ctx.strokeStyle = '#1e293b';
       ctx.beginPath();
-      ctx.moveTo(0, result.farLeft.y); ctx.lineTo(320, result.farLeft.y);
-      ctx.moveTo(0, result.nearLeft.y); ctx.lineTo(320, result.nearLeft.y);
+      ctx.moveTo(0, result.farLeft.y); ctx.lineTo(240, result.farLeft.y);
+      ctx.moveTo(0, result.nearLeft.y); ctx.lineTo(240, result.nearLeft.y);
       ctx.stroke();
 
-      // Green trapezoid formed by the 4 centroids
+      // Verified trapezoid
       ctx.strokeStyle = '#38bdf8';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -200,8 +191,8 @@
       ctx.closePath();
       ctx.stroke();
 
-      // Draw 4 blob centroid markers
-      ctx.fillStyle = '#22c55e';
+      // Centroid markers
+      ctx.fillStyle = '#4ade80';
       [result.nearLeft, result.nearRight, result.farLeft, result.farRight].forEach(pt => {
         ctx.beginPath();
         ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
@@ -209,9 +200,8 @@
       });
     };
 
-    // Auto-initialize on load
     window.addEventListener('DOMContentLoaded', () => {
-      setTimeout(configureDefaults, 300);
+      setTimeout(setScreenPreset, 400);
     });
   </script>
 </body>
