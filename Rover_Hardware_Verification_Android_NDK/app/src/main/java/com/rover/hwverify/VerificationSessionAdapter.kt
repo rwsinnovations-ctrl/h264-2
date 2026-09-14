@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.Surface
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import java.nio.ByteBuffer
@@ -14,20 +15,22 @@ class VerificationSessionAdapter(
 ) {
     companion object {
         private const val TAG = "RoverAdapter"
-        const val WIDTH = 320
-        const val HEIGHT = 240
+        // Native Portrait Dimensions
+        const val WIDTH = 240
+        const val HEIGHT = 320
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val cameraEngine = Camera2DefocusEngine(context)
 
-    var farScanlineY: Int = 60
-    var nearScanlineY: Int = 210
+    // Scanline configuration for Portrait mode (Height = 320)
+    var farScanlineY: Int = 90
+    var nearScanlineY: Int = 280
     var transientVyThreshold: Float = 3.0f
-    var blobWidthMin: Int = 4
-    var blobWidthMax: Int = 24
-    var minGauge: Int = 80
-    var maxGauge: Int = 260
+    var blobWidthMin: Int = 2
+    var blobWidthMax: Int = 35
+    var minGauge: Int = 40
+    var maxGauge: Int = 220
 
     private var frameCounter = 0
     private var isStarted = false
@@ -41,9 +44,11 @@ class VerificationSessionAdapter(
     }
 
     /**
-     * Called ONLY after Camera permission is verified.
+     * Starts dual hardware surfaces:
+     * 1. Direct on-screen preview SurfaceView (Visible Camera Feed)
+     * 2. Zero-copy ImageReader DMA buffer (C++ NDK 1D Otsu processing)
      */
-    fun startHardware() {
+    fun startHardware(previewSurface: Surface) {
         if (isStarted) return
         isStarted = true
 
@@ -51,10 +56,10 @@ class VerificationSessionAdapter(
             onHardwareFrame(directBuffer, rowStride, timestampNs)
         }
 
-        cameraEngine.startCamera {
+        cameraEngine.startCamera(previewSurface) {
             mainHandler.post {
                 webView.evaluateJavascript(
-                    "if (document.getElementById('status-badge')) { document.getElementById('status-badge').className = 'status-badge live'; document.getElementById('status-badge').innerText = 'CAMERA HARDWARE ACTIVE'; }",
+                    "if (document.getElementById('badge')) { document.getElementById('badge').style.background = '#064e3b'; document.getElementById('badge').style.color = '#34d399'; document.getElementById('badge').innerText = 'CAMERA LIVE (PORTRAIT)'; }",
                     null
                 )
             }
